@@ -2,6 +2,7 @@
 
 import { Search, Bell, Languages, ScanLine } from 'lucide-react';
 import { stockAlerts } from '@/data/mockData';
+import AccountMenu from '@/components/layout/AccountMenu';
 
 // ---------------------------------------------------------------------------
 // TopBar — Persistent header with search and notifications
@@ -52,7 +53,7 @@ export default function TopBar({ title }: { title: string }) {
           <Languages size={13} className="text-[var(--color-text-muted)]" />
           English / हिन्दी <span className="text-[var(--color-text-muted)]">⌄</span>
         </button>
-        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#e7f3f1] text-[9px] font-medium text-[#0b837a]">RS</div>
+        <AccountMenu />
       </div>
     </header>
   );

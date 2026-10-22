@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import Sidebar from '@/components/layout/Sidebar';
+import AppShell from '@/components/layout/AppShell';
 
 // ---------------------------------------------------------------------------
 // Root Metadata
@@ -24,15 +24,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <div className="app-shell">
-          {/* Persistent Sidebar */}
-          <Sidebar />
-
-          {/* Main Content Area */}
-          <main className="main-content" id="main-content">
-            {children}
-          </main>
-        </div>
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

@@ -2,6 +2,24 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Supabase authentication
+
+The app uses Supabase Auth email/password sign-in and self-service account
+creation at `/signup`. Enable the Email provider in Supabase. Copy `.env.example`
+to `.env.local` and set:
+
+- `NEXT_PUBLIC_SUPABASE_URL` to the project's URL.
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to its publishable key. The legacy
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY` name is also accepted.
+
+Use only a publishable/anon key in these variables; never put a Supabase
+`service_role` key in a `NEXT_PUBLIC_` variable. Set the Supabase project's Site
+URL to the app's URL and allow `/login` as a redirect URL, then restart the
+development server after configuring the environment. Unauthenticated visitors
+are redirected to `/login`; the account menu in the header signs the user out.
+If email confirmation is enabled, new users must confirm their email before
+signing in.
+
 First, run the development server:
 
 ```bash
