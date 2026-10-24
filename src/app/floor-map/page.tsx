@@ -4,39 +4,54 @@ import { useState, useMemo, useCallback } from 'react';
 import TopBar from '@/components/layout/TopBar';
 import StoreCanvas from '@/components/floor-map/StoreCanvas';
 import ShelfDetailPanel from '@/components/floor-map/ShelfDetailPanel';
-import { storeZones, shelfUnits, inventoryItems, STORE_DIMENSIONS } from '@/data/mockData';
-import { ShelfUnit } from '@/types';
+import { useStoreData } from '@/lib/store-context';
+import { getStoreDimensions } from '@/lib/store-data';
+import { ShelfUnit, type InventoryItem, type StoreZone } from '@/types';
 import { Eye, EyeOff, Thermometer, List, Map as MapIcon, PencilRuler } from 'lucide-react';
 import Link from 'next/link';
+import StoreDataStatus from '@/components/data/StoreDataStatus';
+
+const EMPTY_ZONES: StoreZone[] = [];
+const EMPTY_SHELVES: ShelfUnit[] = [];
+const EMPTY_INVENTORY_ITEMS: InventoryItem[] = [];
 
 // ---------------------------------------------------------------------------
 // Floor Map Page — Interactive 2D store layout with heatmap overlay
 // ---------------------------------------------------------------------------
 export default function FloorMapPage() {
-  const [selectedShelf, setSelectedShelf] = useState<ShelfUnit | null>(shelfUnits[0] ?? null);
+  const { data, loading, error } = useStoreData();
+  const storeZones = data?.zones ?? EMPTY_ZONES;
+  const shelfUnits = data?.shelves ?? EMPTY_SHELVES;
+  const inventoryItems = data?.inventoryItems ?? EMPTY_INVENTORY_ITEMS;
+  const [selectedShelfId, setSelectedShelfId] = useState<string | null>(null);
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [view, setView] = useState<'map' | 'list'>('map');
+  const selectedShelf = shelfUnits.find((shelf) => shelf.id === selectedShelfId) ?? null;
+  const storeDimensions = getStoreDimensions(storeZones);
 
   // Get inventory items for the selected shelf
   const selectedShelfInventory = useMemo(() => {
     if (!selectedShelf) return [];
     return inventoryItems.filter((item) => item.shelfId === selectedShelf.id);
-  }, [selectedShelf]);
+  }, [selectedShelf, inventoryItems]);
 
   const handleShelfClick = useCallback((shelf: ShelfUnit) => {
-    setSelectedShelf((prev) => (prev?.id === shelf.id ? null : shelf));
+    setSelectedShelfId((prev) => (prev === shelf.id ? null : shelf.id));
   }, []);
 
   const handleClosePanel = useCallback(() => {
-    setSelectedShelf(null);
+    setSelectedShelfId(null);
   }, []);
+
+  if (!data) return <StoreDataStatus loading={loading} error={error} />;
 
   return (
     <div className="min-h-screen">
       <TopBar title="Interactive Floor Map" />
 
       <div className="page-content page-stack">
+        <StoreDataStatus loading={loading} error={error} />
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-[21px] font-medium tracking-tight text-[var(--color-text-primary)]">Shop Layout</h1>
@@ -125,7 +140,7 @@ export default function FloorMapPage() {
                 heatmapEnabled={heatmapEnabled}
                 showLabels={showLabels}
                 onShelfClick={handleShelfClick}
-                storeDimensions={STORE_DIMENSIONS}
+                storeDimensions={storeDimensions}
               />
             </div>
 

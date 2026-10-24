@@ -1,26 +1,29 @@
 'use client';
 
 import { Search, Bell, Languages, ScanLine } from 'lucide-react';
-import { stockAlerts } from '@/data/mockData';
 import AccountMenu from '@/components/layout/AccountMenu';
+import { useStoreData } from '@/lib/store-context';
+import { getStockStatus } from '@/types';
 
 // ---------------------------------------------------------------------------
 // TopBar — Persistent header with search and notifications
 // ---------------------------------------------------------------------------
 export default function TopBar({ title }: { title: string }) {
-  const criticalCount = stockAlerts.filter(
-    (a) => a.severity === 'stockout' || a.severity === 'critical'
-  ).length;
+  const { data } = useStoreData();
+  const criticalCount = data?.inventoryItems.filter((item) => {
+    const status = getStockStatus(item);
+    return status === 'stockout' || status === 'critical';
+  }).length ?? 0;
 
   return (
     <header aria-label={title} className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-[var(--color-border-subtle)] bg-white px-5 sm:px-6">
       {/* --- Page Title --- */}
       <div>
         <h1 className="text-[13px] font-medium text-[var(--color-text-primary)] tracking-tight">
-          Good Morning, Shopkeeper!
+          {title}
         </h1>
         <p className="mt-0.5 text-[9px] text-[var(--color-text-muted)]">
-          Monday, 19 October 2026
+          Store data · refreshes every 5 seconds
         </p>
       </div>
 

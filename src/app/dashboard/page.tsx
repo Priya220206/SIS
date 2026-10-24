@@ -2,14 +2,9 @@
 
 import Link from 'next/link';
 import TopBar from '@/components/layout/TopBar';
-import {
-  dashboardMetrics,
-  inventoryItems,
-  replenishmentTasks,
-  stockAlerts,
-  storeZones,
-  zoneUtilization,
-} from '@/data/mockData';
+import { getStockStatus } from '@/types';
+import { useStoreData } from '@/lib/store-context';
+import StoreDataStatus from '@/components/data/StoreDataStatus';
 import {
   AlertTriangle,
   ArrowRight,
@@ -26,6 +21,42 @@ import {
 const categoryColors = ['#0b8981', '#6298bd', '#9582ba', '#d2ad70', '#93bbb4', '#899ba8'];
 
 export default function DashboardPage() {
+  const { data, loading, error } = useStoreData();
+  if (!data) return <StoreDataStatus loading={loading} error={error} />;
+
+  const { inventoryItems, replenishmentTasks, zones: storeZones, shelves: shelfUnits } = data;
+  const stockAlerts = inventoryItems
+    .filter((item) => getStockStatus(item) !== 'in-stock')
+    .map((item) => {
+      const status = getStockStatus(item);
+      return {
+        id: item.id,
+        productName: item.product.name,
+        severity: status === 'stockout' ? 'stockout' : status === 'critical' ? 'critical' : 'warning',
+        message: status === 'stockout'
+          ? `${item.product.name} is out of stock on ${item.shelf.code}`
+          : `${item.product.name} is low (${item.quantity}/${item.reorderPoint}) on ${item.shelf.code}`,
+      };
+    });
+  const dashboardMetrics = {
+    totalSKUs: new Set(inventoryItems.map((item) => item.productId)).size,
+    itemsBelowReorder: stockAlerts.length,
+    totalShelves: shelfUnits.length,
+    spaceUtilization: shelfUnits.length
+      ? Math.round(shelfUnits.reduce((sum, shelf) => sum + shelf.fillPercentage, 0) / shelfUnits.length)
+      : 0,
+  };
+  const zoneUtilization = storeZones.map((zone) => {
+    const zoneShelves = shelfUnits.filter((shelf) => shelf.zoneId === zone.id);
+    return {
+      zoneName: zone.name,
+      utilization: zoneShelves.length
+        ? Math.round(zoneShelves.reduce((sum, shelf) => sum + shelf.fillPercentage, 0) / zoneShelves.length)
+        : 0,
+      color: zone.color,
+    };
+  });
+
   const categories = Array.from(
     inventoryItems.reduce((counts, item) => {
       counts.set(item.product.category, (counts.get(item.product.category) ?? 0) + 1);
@@ -85,6 +116,7 @@ export default function DashboardPage() {
       <TopBar title="Home" />
 
       <div className="page-content page-stack">
+        <StoreDataStatus loading={loading} error={error} />
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-[21px] font-medium tracking-tight text-[var(--color-text-primary)]">
@@ -96,7 +128,7 @@ export default function DashboardPage() {
           </div>
           <button className="flex items-center gap-2 rounded-lg border border-[var(--color-border-default)] bg-white px-3 py-2 text-[10px] font-medium text-[var(--color-text-primary)]">
             <CalendarDays size={13} className="text-[var(--color-accent-cyan)]" />
-            Today, 19 Oct
+            Live inventory
           </button>
         </div>
 
@@ -163,10 +195,15 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
+              {!stockAlerts.length && (
+                <p className="py-5 text-center text-[9px] text-[var(--color-text-muted)]">
+                  No products are currently below their reorder point.
+                </p>
+              )}
             </div>
             <div className="mt-3 flex items-center gap-2 rounded-md bg-[#fff4e4] px-2.5 py-2 text-[8px] text-[#b96c22]">
               <CalendarDays size={12} />
-              {stockAlerts.length} batches need a quick stock check this month.
+              {stockAlerts.length} products need a stock check based on current quantities.
             </div>
           </article>
 
@@ -214,7 +251,7 @@ export default function DashboardPage() {
 
             <article className="glass-card p-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-[12px] font-medium text-[var(--color-text-primary)]">Today&apos;s progress</h2>
+                <h2 className="text-[12px] font-medium text-[var(--color-text-primary)]">Restock progress</h2>
                 <span className="text-[8px] text-[var(--color-text-muted)]">
                   {replenishmentTasks.filter((task) => task.completed).length} completed
                 </span>

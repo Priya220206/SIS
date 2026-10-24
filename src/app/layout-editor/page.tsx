@@ -1,11 +1,17 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import TopBar from '@/components/layout/TopBar';
-import { storeZones, shelfUnits, STORE_DIMENSIONS } from '@/data/mockData';
+import { storeRequest, useStoreData } from '@/lib/store-context';
+import { getStoreDimensions } from '@/lib/store-data';
 import { ShelfUnit } from '@/types';
 import { Save, RotateCcw, Grid3x3, Plus, Trash2, Move } from 'lucide-react';
+import StoreDataStatus from '@/components/data/StoreDataStatus';
+import type { StoreZone } from '@/types';
+
+const EMPTY_ZONES: StoreZone[] = [];
+const EMPTY_SHELVES: ShelfUnit[] = [];
 
 // Dynamic import for editor canvas
 const EditorCanvas = dynamic(
@@ -24,17 +30,20 @@ const EditorCanvas = dynamic(
 // Layout Editor Page — Drag-and-drop shelf arrangement
 // ---------------------------------------------------------------------------
 export default function LayoutEditorPage() {
-  const [editedShelves, setEditedShelves] = useState<ShelfUnit[]>(() =>
-    shelfUnits.map((s) => ({ ...s }))
-  );
+  const { data, loading, error, refresh } = useStoreData();
+  const storeZones = data?.zones ?? EMPTY_ZONES;
+  const shelfUnits = data?.shelves ?? EMPTY_SHELVES;
+  const [draftShelves, setDraftShelves] = useState<ShelfUnit[] | null>(null);
+  const editedShelves = draftShelves ?? shelfUnits;
   const [selectedShelf, setSelectedShelf] = useState<string | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [hasChanges, setHasChanges] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const handleShelfMove = useCallback(
     (shelfId: string, newPos: { x: number; y: number }) => {
-      setEditedShelves((prev) =>
-        prev.map((s) =>
+      setDraftShelves((prev) =>
+        (prev ?? shelfUnits).map((s) =>
           s.id === shelfId
             ? {
                 ...s,
@@ -50,24 +59,30 @@ export default function LayoutEditorPage() {
       );
       setHasChanges(true);
     },
-    [snapToGrid]
+    [snapToGrid, shelfUnits]
   );
 
   const handleReset = () => {
-    setEditedShelves(shelfUnits.map((s) => ({ ...s })));
+    setDraftShelves(null);
     setHasChanges(false);
     setSelectedShelf(null);
   };
 
-  const handleSave = () => {
-    // In production, this would POST to the API to persist layout changes
-    setHasChanges(false);
-    alert('Layout saved successfully! (Demo mode)');
+  const handleSave = async () => {
+    try {
+      setSaveError('');
+      await storeRequest('/api/store/shelves', 'PUT', { shelves: editedShelves });
+      await refresh();
+      setDraftShelves(null);
+      setHasChanges(false);
+    } catch (cause) {
+      setSaveError(cause instanceof Error ? cause.message : 'Could not save the layout.');
+    }
   };
 
   const handleDeleteShelf = () => {
     if (selectedShelf) {
-      setEditedShelves((prev) => prev.filter((s) => s.id !== selectedShelf));
+      setDraftShelves((prev) => (prev ?? shelfUnits).filter((s) => s.id !== selectedShelf));
       setSelectedShelf(null);
       setHasChanges(true);
     }
@@ -75,26 +90,30 @@ export default function LayoutEditorPage() {
 
   const handleAddShelf = () => {
     const newShelf: ShelfUnit = {
-      id: `s-new-${Date.now()}`,
-      code: `N-${String(editedShelves.length + 1).padStart(2, '0')}`,
-      zoneId: 'z1',
+      id: crypto.randomUUID(),
+      code: `N-${crypto.randomUUID().slice(0, 8)}`,
+      zoneId: storeZones[0]?.id ?? '',
       position: { x: 20, y: 15 },
       dimensions: { width: 3, height: 1.2 },
       totalCapacity: 100,
       fillPercentage: 0,
     };
-    setEditedShelves((prev) => [...prev, newShelf]);
+    setDraftShelves((prev) => [...(prev ?? shelfUnits), newShelf]);
     setSelectedShelf(newShelf.id);
     setHasChanges(true);
   };
 
   const selectedShelfData = editedShelves.find((s) => s.id === selectedShelf);
 
+  if (!data) return <StoreDataStatus loading={loading} error={error} />;
+
   return (
     <div className="min-h-screen">
       <TopBar title="Layout Editor" />
 
       <div className="page-content page-stack">
+        <StoreDataStatus loading={loading} error={error} />
+        {saveError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{saveError}</p>}
         <div>
           <h1 className="text-[21px] font-medium tracking-tight text-[var(--color-text-primary)]">Edit shop layout</h1>
           <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">Arrange shelves and keep every aisle easy to navigate.</p>
@@ -150,7 +169,7 @@ export default function LayoutEditorPage() {
               </button>
 
               <button
-                onClick={handleSave}
+                onClick={() => void handleSave()}
                 disabled={!hasChanges}
                 className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all ${
                   hasChanges
@@ -173,7 +192,7 @@ export default function LayoutEditorPage() {
               shelves={editedShelves}
               selectedShelfId={selectedShelf}
               snapToGrid={snapToGrid}
-              storeDimensions={STORE_DIMENSIONS}
+              storeDimensions={getStoreDimensions(storeZones)}
               onShelfSelect={setSelectedShelf}
               onShelfMove={handleShelfMove}
             />
@@ -208,8 +227,8 @@ export default function LayoutEditorPage() {
                     <select
                       value={selectedShelfData.zoneId}
                       onChange={(e) => {
-                        setEditedShelves((prev) =>
-                          prev.map((s) =>
+                        setDraftShelves((prev) =>
+                          (prev ?? shelfUnits).map((s) =>
                             s.id === selectedShelf ? { ...s, zoneId: e.target.value } : s
                           )
                         );
@@ -260,8 +279,8 @@ export default function LayoutEditorPage() {
                         value={selectedShelfData.dimensions.width}
                         step={0.5}
                         onChange={(e) => {
-                          setEditedShelves((prev) =>
-                            prev.map((s) =>
+                          setDraftShelves((prev) =>
+                            (prev ?? shelfUnits).map((s) =>
                               s.id === selectedShelf
                                 ? { ...s, dimensions: { ...s.dimensions, width: parseFloat(e.target.value) || 1 } }
                                 : s
@@ -281,8 +300,8 @@ export default function LayoutEditorPage() {
                         value={selectedShelfData.dimensions.height}
                         step={0.1}
                         onChange={(e) => {
-                          setEditedShelves((prev) =>
-                            prev.map((s) =>
+                          setDraftShelves((prev) =>
+                            (prev ?? shelfUnits).map((s) =>
                               s.id === selectedShelf
                                 ? { ...s, dimensions: { ...s.dimensions, height: parseFloat(e.target.value) || 0.5 } }
                                 : s
@@ -303,8 +322,8 @@ export default function LayoutEditorPage() {
                       type="number"
                       value={selectedShelfData.totalCapacity}
                       onChange={(e) => {
-                        setEditedShelves((prev) =>
-                          prev.map((s) =>
+                        setDraftShelves((prev) =>
+                          (prev ?? shelfUnits).map((s) =>
                             s.id === selectedShelf
                               ? { ...s, totalCapacity: parseInt(e.target.value) || 0 }
                               : s

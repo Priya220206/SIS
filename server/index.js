@@ -1,13 +1,10 @@
 // =============================================================================
 // SIM — Express Backend Server
-// Entry point for the API server.
+// Legacy health endpoint; application data routes are Next.js Route Handlers.
 // =============================================================================
 
 const express = require('express');
 const cors = require('cors');
-
-const inventoryRoutes = require('./routes/inventory');
-const replenishmentRoutes = require('./routes/replenishment');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -30,12 +27,8 @@ app.use((req, res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
-app.use('/api/inventory', inventoryRoutes);
-app.use('/api/replenishment', replenishmentRoutes);
-
 // Health check endpoint
+// ---------------------------------------------------------------------------
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'healthy',

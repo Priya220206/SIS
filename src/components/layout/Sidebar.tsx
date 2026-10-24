@@ -16,7 +16,7 @@ import {
   CircleCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { replenishmentTasks } from '@/data/mockData';
+import { useStoreData } from '@/lib/store-context';
 
 // ---------------------------------------------------------------------------
 // Navigation Items Configuration
@@ -34,6 +34,9 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { data, error, loading } = useStoreData();
+  const pendingTasks = data?.replenishmentTasks.filter((task) => !task.completed).length ?? 0;
+  const connectionStatus = error ? 'Database unavailable' : loading ? 'Connecting to Turso' : 'Turso connected';
 
   // Keep main-content margin in sync with sidebar width
   useEffect(() => {
@@ -74,8 +77,8 @@ export default function Sidebar() {
 
       {!collapsed && (
         <div className="mx-2 mb-2 rounded-lg bg-[#f4f7f8] px-2.5 py-2">
-          <p className="truncate text-[9px] font-medium text-[var(--color-text-primary)]">Sharma General Store</p>
-          <p className="mt-0.5 truncate text-[8px] text-[var(--color-text-muted)]">Indiranagar, Bengaluru</p>
+          <p className="truncate text-[9px] font-medium text-[var(--color-text-primary)]">Store workspace</p>
+          <p className="mt-0.5 truncate text-[8px] text-[var(--color-text-muted)]">{connectionStatus}</p>
         </div>
       )}
 
@@ -105,7 +108,7 @@ export default function Sidebar() {
               )}
               {!collapsed && item.href === '/replenishment' && (
                 <span className="ml-auto rounded bg-[#fff0dc] px-1 text-[8px] font-medium text-[#b7691f]">
-                  {replenishmentTasks.filter((task) => !task.completed).length}
+                  {pendingTasks}
                 </span>
               )}
             </Link>
@@ -139,7 +142,7 @@ export default function Sidebar() {
 
       <div className="flex items-center gap-1.5 px-3 py-3 text-[8px] text-[var(--color-text-muted)]">
         <CircleCheck size={11} className="text-[#198d69]" />
-        {!collapsed && <span className="whitespace-nowrap">All changes saved · just now</span>}
+        {!collapsed && <span className="whitespace-nowrap">{error ? 'Database sync error' : 'Database refresh · 5 seconds'}</span>}
       </div>
 
       <button

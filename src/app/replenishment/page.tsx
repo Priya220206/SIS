@@ -3,14 +3,8 @@
 import { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import TopBar from '@/components/layout/TopBar';
-import {
-  replenishmentTasks,
-  optimizedRoute,
-  storeZones,
-  shelfUnits,
-  STORE_DIMENSIONS,
-  BACKROOM_POSITION,
-} from '@/data/mockData';
+import { storeRequest, useStoreData } from '@/lib/store-context';
+import { BACKROOM_POSITION, buildOptimizedRoute, getStoreDimensions } from '@/lib/store-data';
 import { cn } from '@/lib/utils';
 import {
   Route,
@@ -21,6 +15,12 @@ import {
   Footprints,
   Zap,
 } from 'lucide-react';
+import StoreDataStatus from '@/components/data/StoreDataStatus';
+import type { ShelfUnit, StoreZone, ReplenishmentTask } from '@/types';
+
+const EMPTY_ZONES: StoreZone[] = [];
+const EMPTY_SHELVES: ShelfUnit[] = [];
+const EMPTY_TASKS: ReplenishmentTask[] = [];
 
 // Dynamic import for route visualizer (uses Konva)
 const RouteVisualizer = dynamic(
@@ -39,34 +39,49 @@ const RouteVisualizer = dynamic(
 // Replenishment Hub — Optimized route display with turn-by-turn instructions
 // ---------------------------------------------------------------------------
 export default function ReplenishmentPage() {
-  const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
+  const { data, loading, error, refresh } = useStoreData();
+  const [actionError, setActionError] = useState('');
+  const storeZones = data?.zones ?? EMPTY_ZONES;
+  const shelfUnits = data?.shelves ?? EMPTY_SHELVES;
+  const replenishmentTasks = data?.replenishmentTasks ?? EMPTY_TASKS;
+  const pendingTasks = replenishmentTasks.filter((task) => !task.completed);
+  const completedCount = replenishmentTasks.length - pendingTasks.length;
+  const optimizedRoute = useMemo(
+    () => buildOptimizedRoute(pendingTasks, shelfUnits),
+    [pendingTasks, shelfUnits]
+  );
+  const completedTasks = new Set(replenishmentTasks.filter((task) => task.completed).map((task) => task.id));
 
-  const toggleTask = (taskId: string) => {
-    setCompletedTasks((prev) => {
-      const next = new Set(prev);
-      if (next.has(taskId)) {
-        next.delete(taskId);
-      } else {
-        next.add(taskId);
-      }
-      return next;
-    });
+  const completeTask = async (taskId: string) => {
+    try {
+      setActionError('');
+      await storeRequest(`/api/store/tasks/${encodeURIComponent(taskId)}`, 'PATCH');
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : 'Could not complete the task.');
+    }
   };
 
-  const progress = (completedTasks.size / replenishmentTasks.length) * 100;
+  const progress = replenishmentTasks.length ? (completedCount / replenishmentTasks.length) * 100 : 0;
 
   // Map task IDs in optimized order
   const orderedTasks = useMemo(() => {
-    return optimizedRoute.sequence.map(
-      (taskId) => replenishmentTasks.find((t) => t.id === taskId)!
-    );
-  }, []);
+    const taskById = new Map(pendingTasks.map((task) => [task.id, task]));
+    return optimizedRoute.sequence.flatMap((taskId) => {
+      const task = taskById.get(taskId);
+      return task ? [task] : [];
+    });
+  }, [optimizedRoute.sequence, pendingTasks]);
+
+  if (!data) return <StoreDataStatus loading={loading} error={error} />;
 
   return (
     <div className="min-h-screen">
       <TopBar title="Replenishment Hub" />
 
       <div className="page-content page-stack">
+        <StoreDataStatus loading={loading} error={error} />
+        {actionError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{actionError}</p>}
         <div>
           <h1 className="text-[21px] font-medium tracking-tight text-[var(--color-text-primary)]">Restock &amp; Orders</h1>
           <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">Plan a quick route and keep shelves stocked.</p>
@@ -138,7 +153,7 @@ export default function ReplenishmentPage() {
               Route Progress
             </span>
             <span className="text-xs text-[var(--color-text-muted)]">
-              {completedTasks.size} of {replenishmentTasks.length} items restocked
+              {completedCount} of {replenishmentTasks.length} items restocked
             </span>
           </div>
           <div className="progress-bar h-2">
@@ -161,7 +176,7 @@ export default function ReplenishmentPage() {
               shelves={shelfUnits}
               route={optimizedRoute}
               completedTasks={completedTasks}
-              storeDimensions={STORE_DIMENSIONS}
+              storeDimensions={getStoreDimensions(storeZones)}
               backroomPosition={BACKROOM_POSITION}
             />
           </div>
@@ -178,7 +193,8 @@ export default function ReplenishmentPage() {
             <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
               {optimizedRoute.directions.map((dir, idx) => {
                 const task = orderedTasks[idx];
-                const isCompleted = completedTasks.has(task.id);
+                if (!task) return null;
+                const isCompleted = task.completed;
 
                 return (
                   <div
@@ -194,7 +210,7 @@ export default function ReplenishmentPage() {
                     <input
                       type="checkbox"
                       checked={isCompleted}
-                      onChange={() => toggleTask(task.id)}
+                      onChange={() => void completeTask(task.id)}
                       className="task-checkbox mt-0.5"
                     />
 
@@ -243,6 +259,11 @@ export default function ReplenishmentPage() {
                   </div>
                 );
               })}
+              {!optimizedRoute.directions.length && (
+                <p className="rounded-lg bg-[var(--color-bg-input)] p-4 text-xs text-[var(--color-text-muted)]">
+                  No pending replenishment tasks are in the database.
+                </p>
+              )}
             </div>
           </div>
         </div>

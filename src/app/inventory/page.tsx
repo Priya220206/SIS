@@ -2,16 +2,22 @@
 
 import { useState, useMemo } from 'react';
 import TopBar from '@/components/layout/TopBar';
-import { inventoryItems, shelfUnits, storeZones } from '@/data/mockData';
-import { getStockStatus, InventoryItem } from '@/types';
+import { storeRequest, useStoreData } from '@/lib/store-context';
+import { getStockStatus, type InventoryItem, type StoreZone } from '@/types';
 import { cn, getStatusBg } from '@/lib/utils';
 import { Search, Filter, Edit3, X, Save, Package, Plus } from 'lucide-react';
+import StoreDataStatus from '@/components/data/StoreDataStatus';
+
+const EMPTY_INVENTORY_ITEMS: InventoryItem[] = [];
+const EMPTY_ZONES: StoreZone[] = [];
 
 // ---------------------------------------------------------------------------
 // Inventory Catalog Page — Data table with inline editing
 // ---------------------------------------------------------------------------
 export default function InventoryPage() {
-  const [items, setItems] = useState<InventoryItem[]>(inventoryItems);
+  const { data, loading, error, refresh } = useStoreData();
+  const items = data?.inventoryItems ?? EMPTY_INVENTORY_ITEMS;
+  const storeZones = data?.zones ?? EMPTY_ZONES;
   const [searchQuery, setSearchQuery] = useState('');
   const [filterZone, setFilterZone] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -31,6 +37,7 @@ export default function InventoryPage() {
     price: 0,
   });
   const [addProductError, setAddProductError] = useState('');
+  const [mutationError, setMutationError] = useState('');
 
   // Filtered inventory list
   const filteredItems = useMemo(() => {
@@ -58,74 +65,58 @@ export default function InventoryPage() {
     }
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingId) return;
-    setItems((current) =>
-      current.map((item) =>
-        item.id === editingId
-          ? { ...item, capacity: editValues.capacity, reorderPoint: editValues.reorderPoint }
-          : item
-      )
-    );
-    setEditingId(null);
+    try {
+      setMutationError('');
+      await storeRequest(`/api/store/inventory/${encodeURIComponent(editingId)}`, 'PATCH', editValues);
+      await refresh();
+      setEditingId(null);
+    } catch (cause) {
+      setMutationError(cause instanceof Error ? cause.message : 'Could not update inventory.');
+    }
   };
 
-  const addProduct = (event: React.FormEvent<HTMLFormElement>) => {
+  const addProduct = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const sku = newProduct.sku.trim();
     if (!newProduct.name.trim() || !sku) {
       setAddProductError('Enter a product name and barcode or SKU.');
       return;
     }
-    if (items.some((item) => item.product.sku.toLowerCase() === sku.toLowerCase())) {
-      setAddProductError('That barcode or SKU is already in your products.');
-      return;
+    try {
+      await storeRequest('/api/store/inventory', 'POST', {
+        ...newProduct,
+        name: newProduct.name.trim(),
+        sku,
+        category: newProduct.category || storeZones[0]?.name || '',
+      });
+      await refresh();
+      setShowAddProduct(false);
+      setAddProductError('');
+      setNewProduct({
+        name: '',
+        sku: '',
+        category: storeZones[0]?.name ?? '',
+        quantity: 1,
+        capacity: 12,
+        reorderPoint: 3,
+        price: 0,
+      });
+    } catch (cause) {
+      setAddProductError(cause instanceof Error ? cause.message : 'Could not add product.');
     }
-    const zone = storeZones.find((entry) => entry.name === newProduct.category);
-    const shelf = zone && shelfUnits.find((entry) => entry.zoneId === zone.id);
-    if (!shelf || !zone) {
-      setAddProductError('There is no shelf available for this category yet.');
-      return;
-    }
-    const product = {
-      id: `new-${Date.now()}`,
-      sku,
-      name: newProduct.name.trim(),
-      category: newProduct.category,
-      price: newProduct.price,
-    };
-    const item: InventoryItem = {
-      id: `inventory-${product.id}`,
-      productId: product.id,
-      product,
-      shelfId: shelf.id,
-      shelf,
-      zoneId: shelf.zoneId,
-      quantity: newProduct.quantity,
-      capacity: newProduct.capacity,
-      reorderPoint: newProduct.reorderPoint,
-      backroomStock: 0,
-      lastUpdated: new Date().toISOString(),
-    };
-    setItems((current) => [item, ...current]);
-    setShowAddProduct(false);
-    setAddProductError('');
-    setNewProduct({
-      name: '',
-      sku: '',
-      category: storeZones[0]?.name ?? '',
-      quantity: 1,
-      capacity: 12,
-      reorderPoint: 3,
-      price: 0,
-    });
   };
+
+  if (!data) return <StoreDataStatus loading={loading} error={error} />;
 
   return (
     <div className="min-h-screen">
       <TopBar title="Inventory Catalog" />
 
       <div className="page-content page-stack">
+        <StoreDataStatus loading={loading} error={error} />
+        {mutationError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{mutationError}</p>}
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-[21px] font-medium tracking-tight text-[var(--color-text-primary)]">My Products</h1>
@@ -215,7 +206,13 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.map((item) => {
+                {!filteredItems.length ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-[var(--color-text-muted)]">
+                      No inventory records are configured in Turso yet.
+                    </td>
+                  </tr>
+                ) : filteredItems.map((item) => {
                   const status = getStockStatus(item);
                   const zone = storeZones.find((z) => z.id === item.zoneId);
                   const isEditing = editingId === item.id;
@@ -285,7 +282,7 @@ export default function InventoryPage() {
                         {isEditing ? (
                           <div className="flex items-center justify-center gap-1">
                             <button
-                              onClick={saveEdit}
+                              onClick={() => void saveEdit()}
                               className="p-1.5 rounded-lg bg-emerald-400/15 text-emerald-700 hover:bg-emerald-400/25 transition-colors"
                               aria-label={`Save ${item.product.name}`}
                             >
@@ -338,7 +335,7 @@ export default function InventoryPage() {
                 </label>
                 <label className="text-[10px] font-medium text-[var(--color-text-secondary)]">
                   Category *
-                  <select value={newProduct.category} onChange={(event) => setNewProduct({ ...newProduct, category: event.target.value })} className="mt-1.5 w-full rounded-md border border-[var(--color-border-default)] bg-white px-3 py-2 text-xs text-[var(--color-text-primary)]">
+                  <select value={newProduct.category || storeZones[0]?.name || ''} onChange={(event) => setNewProduct({ ...newProduct, category: event.target.value })} className="mt-1.5 w-full rounded-md border border-[var(--color-border-default)] bg-white px-3 py-2 text-xs text-[var(--color-text-primary)]">
                     {storeZones.map((zone) => <option key={zone.id} value={zone.name}>{zone.name}</option>)}
                   </select>
                 </label>
